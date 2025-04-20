@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Speech to Text with Backend POS Tagging</title>
+</head>
+<body>
+    <h1>Speech to Text with Backend POS Tagging</h1>
+    <button id="startButton">Start Recording</button>
+    <button id="stopButton" disabled>Stop Recording</button>
+    <p id="status">Ready...</p>
+    <div id="output"></div>
+
+    <script>
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const statusDisplay = document.getElementById('status');
+        const outputDiv = document.getElementById('output');
+        let mediaRecorder;
+        let audioChunks = [];
+        let websocket;
+
+        startButton.addEventListener('click', startRecording);
+        stopButton.addEventListener('click', stopRecording);
+
+        function startRecording() {
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    mediaRecorder = new MediaRecorder(stream);
+                    mediaRecorder.ondataavailable = event => {
+                        if (event.data.size > 0) {
+                            audioChunks.push(event.data);
+                        }
+                    };
+                    mediaRecorder.onstop = () => {
+                        if (audioChunks.length > 0) {
+                            const audioBlob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
+                            sendAudio(audioBlob);
+                            audioChunks = [];
+                        }
+                        startButton.disabled = false;
+                        stopButton.disabled = true;
+                        statusDisplay.textContent = "Processing...";
+                        outputDiv.innerHTML = '';
+                    };
+                    mediaRecorder.start(100); // Send data in chunks
+                    startButton.disabled = true;
+                    stopButton.disabled = false;
+                    statusDisplay.textContent = "Recording...";
+                })
+                .catch(error => {
+                    console.error('Error accessing microphone:', error);
+                    statusDisplay.textContent = "Error accessing microphone.";
+                });
+
+            websocket = new WebSocket('ws://' + window.location.host + '/ws/stt_pos/');
+
+            websocket.onopen = () => {
+                console.log('WebSocket connection opened');
+                statusDisplay.textContent = "Ready to talk...";
+            };
+
+            websocket.onmessage = event => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.transcript_tags) {
+                        outputDiv.innerHTML = data.transcript_tags;
+                        statusDisplay.textContent = "Ready...";
+                    } else if (data.error) {
+                        outputDiv.textContent = `Error: ${data.error}`;
+                        statusDisplay.textContent = "Error.";
+                    } else if (data.message) {
+                        outputDiv.textContent = data.message;
+                    }
+                } catch (e) {
+                    console.error('Error processing message:', event.data, e);
+                }
+            };
+
+            websocket.onclose = () => {
+                console.log('WebSocket connection closed');
+                statusDisplay.textContent = "Connection closed.";
+            };
+
+            websocket.onerror = error => {
+                console.error('WebSocket error:', error);
+                statusDisplay.textContent = "WebSocket error.";
+            };
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+            }
+        }
+
+        function sendAudio(audioBlob) {
+            if (websocket && websocket.readyState === WebSocket.OPEN) {
+                websocket.send(audioBlob);
+            } else {
+                console.error('WebSocket not open. Cannot send audio.');
+            }
+        }
+    </script>
+</body>
+</html>
