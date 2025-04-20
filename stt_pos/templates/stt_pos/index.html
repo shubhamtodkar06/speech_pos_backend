@@ -1,31 +1,97 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Speech to Text with Backend POS Tagging</title>
+    <title>Speech to Text with POS Tagging</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+            background-color: #f4f4f4;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background-color: #eee;
+        }
+        button:disabled {
+            background-color: #ddd;
+            cursor: not-allowed;
+        }
+        #status {
+            margin-top: 15px;
+            font-weight: bold;
+            color: #555;
+        }
+        #transcribedText {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #fff;
+            white-space: pre-wrap; /* Preserve whitespace and wrap text */
+        }
+        #taggedOutput {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #fff;
+            white-space: pre-wrap; /* Preserve whitespace and wrap text */
+            color: #333;
+        }
+        .nn { color: darkgreen; } /* Noun, singular or mass */
+        .nns { color: darkgreen; font-style: italic; } /* Noun, plural */
+        .jj { color: blue; } /* Adjective */
+        .vb { color: red; } /* Verb, base form */
+        .vbp { color: red; font-weight: bold; } /* Verb, non-3rd person singular present */
+        .vbd { color: red; font-style: italic; } /* Verb, past tense */
+        .in { color: purple; } /* Preposition or subordinating conjunction */
+        .dt { color: orange; } /* Determiner */
+        .prp { color: brown; } /* Personal pronoun */
+        .wrb { color: teal; } /* Wh-adverb */
+        /* Add more styles for other tags as needed */
+    </style>
 </head>
 <body>
-    <h1>Speech to Text with Backend POS Tagging</h1>
+    <h1>Speech to Text with POS Tagging</h1>
     <button id="startButton">Start Recording</button>
     <button id="stopButton" disabled>Stop Recording</button>
     <p id="status">Ready...</p>
-    <div id="output"></div>
+    <div>
+        <h2>Transcribed Text:</h2>
+        <div id="transcribedText"></div>
+    </div>
+    <div>
+        <h2>POS Tagged Output:</h2>
+        <div id="taggedOutput"></div>
+    </div>
 
     <script>
         const startButton = document.getElementById('startButton');
         const stopButton = document.getElementById('stopButton');
         const statusDisplay = document.getElementById('status');
-        const outputDiv = document.getElementById('output');
+        const transcribedTextDiv = document.getElementById('transcribedText');
+        const taggedOutputDiv = document.getElementById('taggedOutput');
         let mediaRecorder;
         let audioChunks = [];
         let websocket;
+        let latestTranscript = "";
 
         startButton.addEventListener('click', startRecording);
         stopButton.addEventListener('click', stopRecording);
 
         function startRecording() {
-            navigator.mediaDevices.getUserMedia({ audio: true })
+            navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 48000 } })
                 .then(stream => {
-                    mediaRecorder = new MediaRecorder(stream);
+                    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
                     mediaRecorder.ondataavailable = event => {
                         if (event.data.size > 0) {
                             audioChunks.push(event.data);
@@ -40,9 +106,10 @@
                         startButton.disabled = false;
                         stopButton.disabled = true;
                         statusDisplay.textContent = "Processing...";
-                        outputDiv.innerHTML = '';
+                        transcribedTextDiv.textContent = "";
+                        taggedOutputDiv.innerHTML = "";
                     };
-                    mediaRecorder.start(100); // Send data in chunks
+                    mediaRecorder.start(100);
                     startButton.disabled = true;
                     stopButton.disabled = false;
                     statusDisplay.textContent = "Recording...";
@@ -63,13 +130,16 @@
                 try {
                     const data = JSON.parse(event.data);
                     if (data.transcript_tags) {
-                        outputDiv.innerHTML = data.transcript_tags;
+                        taggedOutputDiv.innerHTML = `Tagged Output: ${data.transcript_tags}`;
                         statusDisplay.textContent = "Ready...";
+                    } else if (data.transcript) {
+                        latestTranscript = data.transcript;
+                        transcribedTextDiv.textContent = `Transcribed: ${latestTranscript}`;
                     } else if (data.error) {
-                        outputDiv.textContent = `Error: ${data.error}`;
+                        taggedOutputDiv.textContent = `Error: ${data.error}`;
                         statusDisplay.textContent = "Error.";
                     } else if (data.message) {
-                        outputDiv.textContent = data.message;
+                        taggedOutputDiv.textContent = data.message;
                     }
                 } catch (e) {
                     console.error('Error processing message:', event.data, e);

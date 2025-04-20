@@ -1,0 +1,5 @@
+daphne
+channels
+django>=4.2,<5.0
+google-cloud-speech
+nltk
